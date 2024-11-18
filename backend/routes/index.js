@@ -1,53 +1,56 @@
 const express = require('express');
-const axios = require('axios');
-const db = require('../db/db');
-require('dotenv').config();  
-
+const { connection } = require('../db/db'); 
 const router = express.Router();
+const { calcularNutricional } = require('../services/geminiService');
 
 
-function extractCalories(text) {
-  const caloriasRegex = /calorias.*\s*(\d+)\s*(kcal|cal)/i;
-  const match = text.match(caloriasRegex);
-  
-  if (match) {
-    return match[1];
-  }
-  
-  
-  if (text.includes('ganho de massa')) {
-    return 2500; 
-  }
-  
-  return null; 
-}
+router.get('/', (req, res) => {
+    const endpoint = '/';  
+    const timestamp = new Date();  
+    const resposta = 'Hello World!';  
 
 
-function extractMacronutrients(text) {
-  const macronutrientes = {};
+    connection.query(
+        'INSERT INTO dados_coresync (endpoint, data_recbida) VALUES (?, ?, ?)', 
+        [endpoint, timestamp.toISOString().slice(0, 19).replace('T', ' '), resposta],
+        (err, results) => {
+            if (err) {
+                console.error('Erro ao salvar a chamada do endpoint na base de dados:', err);
+                return res.status(500).json({ message: 'Erro ao salvar a chamada do endpoint na base de dados.' });
+            }
+
+            
+            return res.json({ message: 'Hello, World!' });
+        }
+    );
+});
 
 
-  const proteinasRegex = /proteínas[^:]*[:\s]*(\d+)\s*(g|gramas)/i;
-  const proteinasMatch = text.match(proteinasRegex);
-  if (proteinasMatch) macronutrientes.proteinas = proteinasMatch[1];
 
+router.get('/consultar', async (req, res) => {
+    const endpoint = '/consultar';
+    const timestamp = new Date();
 
-  const carboidratosRegex = /carboidratos[^:]*[:\s]*(\d+)\s*(g|gramas)/i;
-  const carboidratosMatch = text.match(carboidratosRegex);
-  if (carboidratosMatch) macronutrientes.carboidratos = carboidratosMatch[1];
-
-  
-  const gordurasRegex = /gorduras[^:]*[:\s]*(\d+)\s*(g|gramas)/i;
-  const gordurasMatch = text.match(gordurasRegex);
-  if (gordurasMatch) macronutrientes.gorduras = gordurasMatch[1];
-
-  
-  if (Object.keys(macronutrientes).length === 0) {
-    if (text.includes('ganho de massa')) {
-      macronutrientes.proteinas = 150; 
-      macronutrientes.carboidratos = 300;
-      macronutrientes.gorduras = 80;
-    }
+    try {
+        
+        connection.query(
+            'INSERT INTO dados_coresync (endpoint, data_recbida) VALUES (?, ?)', 
+            [endpoint, timestamp.toISOString().slice(0, 19).replace('T', ' ')],
+            (err, results) => {
+                if (err) {
+                    console.error('Erro ao executar a consulta:', err);
+                    return res.status(500).send('Erro ao consultar dados');
+                }
+                res.json({
+                    message: 'Consulta realizada com sucesso!',
+                    results
+                });
+            }
+        );
+    } catch (err) {
+        console.error('Erro ao consultar dados:', err);
+        res.status(500).send('Erro ao consultar dados');
+    } master
   }
 
   return macronutrientes;
@@ -94,12 +97,14 @@ router.post('/calculo-nutricional', async (req, res) => {
 
   const { GEMINI_API_KEY: apiKey, GEMINI_API_URL: endpointGemini } = process.env;
 
-  if (!apiKey || !endpointGemini) {
-    return res.status(500).json({ error: 'Chave de API Gemini ou endpoint não configurado' });
-  }
+});
+ main
 
-  try {
+router.post('/calcular', async (req, res) => {
+    const { contents } = req.body;
+
     
+ master
     const dadosNutricionais = {
       peso,
       altura,
@@ -121,9 +126,26 @@ router.post('/calculo-nutricional', async (req, res) => {
 
     console.log('Resposta completa da API Gemini:', JSON.stringify(response.data, null, 2));
 
-    
-    const geminiData = response.data;
+    if (!contents || !Array.isArray(contents) || contents.length === 0) {
+        return res.status(400).json({ message: 'Conteúdo inválido ou não fornecido.' });
+    }
+ main
 
+    
+    const dados = {
+        contents: contents.map(content => {
+            if (!content.parts || !Array.isArray(content.parts)) {
+                return res.status(400).json({ message: 'Formato de partes inválido.' });
+            }
+            return {
+                parts: content.parts.map(part => ({
+                    text: part.text || ""  
+                }))
+            };
+        })
+    };
+
+ master
     
     if (geminiData.candidates && geminiData.candidates.length > 0) {
       const analysisText = geminiData.candidates[0].content.parts[0].text;
@@ -154,14 +176,50 @@ router.post('/calculo-nutricional', async (req, res) => {
       }
     } else {
       return res.status(500).json({ error: 'Resposta incompleta da API Gemini' });
-    }
 
-  } catch (err) {
-    console.error('Erro ao se comunicar com a API Gemini:', err);
-    const status = err.response?.status || 500;
-    const message = err.response?.data || 'Erro ao se comunicar com a API Gemini';
-    res.status(status).json({ error: message });
-  }
+    try {
+        
+        const resultados = await calcularNutricional(dados);
+
+        
+        const textoNutricional = resultados.candidates
+            .map(candidate => candidate.content.parts.map(part => part.text).join(" "))  
+            .join(" ");  
+
+        
+        const textoLimpo = textoNutricional.replace(/\n/g, " ");  
+
+        
+        const timestamp = new Date();
+        const endpoint = '/calcular'; 
+
+        
+        connection.query(
+            'INSERT INTO dados_coresync (endpoint, data_recbida, resposta) VALUES (?, ?, ?)', 
+            [
+                endpoint, 
+                timestamp.toISOString().slice(0, 19).replace('T', ' '),  
+                textoLimpo  
+            ],
+            (err, results) => {
+                if (err) {
+                    console.error('Erro ao salvar a resposta no banco de dados:', err);
+                    return res.status(500).json({ message: 'Erro ao salvar a resposta no banco de dados.' });
+                }
+
+                
+                return res.json({
+                    message: 'Cálculo realizado com sucesso!',
+                    textoNutricional: textoLimpo, 
+                    bancoResultados: results 
+                });
+            }
+        );
+    } catch (error) {
+        console.error('Erro ao calcular os dados nutricionais:', error);
+        return res.status(500).json({ message: 'Erro ao calcular os dados nutricionais.' });
+main
+    }
 });
 
 module.exports = router;
