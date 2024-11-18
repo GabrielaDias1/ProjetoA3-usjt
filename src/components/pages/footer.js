@@ -8,17 +8,6 @@ function Footer() {
     <>
       <footer className="footer">
         <div className="footer-content">
-          <ul className="footer-links">
-            <li>
-              <a href="#">Política de Privacidade</a>
-            </li>
-            <li>
-              <a href="#">Termos de Serviço</a>
-            </li>
-            <li>
-              <a href="#">Contato</a>
-            </li>
-          </ul>
           <div className="social-icons">
             <a href="#" aria-label="Facebook">
               <FontAwesomeIcon icon={faFacebook} />
